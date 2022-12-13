@@ -10,14 +10,16 @@
 #include <chrono>
 #include <iostream>
 
-void client(std::atomic<std::size_t> & clients, const int max_value) noexcept
-{
 //	последовательно согласованное упорядочение
-//	while (clients.load(std::memory_order_seq_cst) != max_value)
+#define memory_order std::memory_order_seq_cst
 //	нестрогое упорядочение
-//	while (clients.load(std::memory_order_relaxed) != max_value)
+//#define memory_order std::memory_order_relaxed
 // 	упорядочение на основе захвата-освобождения
-	while (clients.load(std::memory_order_acquire) != max_value)
+//#define memory_order std::memory_order_acquire
+
+void client(std::atomic<std::size_t> & clients, const std::atomic<std::size_t> & max_value)
+{
+	while (clients.load(memory_order) != max_value.load(memory_order))
 	{
 		std::cout << "Clients: " << ++clients << '\n';
 		std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -25,34 +27,33 @@ void client(std::atomic<std::size_t> & clients, const int max_value) noexcept
 	std::cout << "No more clients for today!\n";
 }
 
-void manager(std::atomic<std::size_t> & clients) noexcept
+void manager(std::atomic<std::size_t> & clients)
 {
 	do
 	{
 		std::cout << "Manager: " << --clients << '\n';
 		std::this_thread::sleep_for(std::chrono::seconds(2));
 	}
-//	последовательно согласованное упорядочение
-//	while (clients.load(std::memory_order_seq_cst) != 0);
-//	нестрогое упорядочение
-//	while (clients.load(std::memory_order_relaxed) != 0);
-// 	упорядочение на основе захвата-освобождения
-	while (clients.load(std::memory_order_acquire) != 0);
+	while (clients.load(memory_order) != 0);
 	std::cout << "All clients served!\n";
 }
 
 int main()
 {
 	std::cout << "Enter maximum number of clients: ";
-	std::size_t max_value {};
-	std::atomic<std::size_t> clients {};
-	while (!(std::cin >> max_value) || max_value > std::numeric_limits<std::size_t>::max() / 2)
+	std::size_t temp {};
+	while (!(std::cin >> temp) || temp > std::numeric_limits<std::size_t>::max() / 2)
 	{
 		std::cin.clear();
 		while (std::cin.get() != '\n') { continue; }
 		std::cout << "Please, enter valid value: ";
 	}
-	std::thread thread_client {client, std::ref(clients), max_value};
+
+	std::atomic<std::size_t> clients {};
+	std::atomic<std::size_t> max_value {};
+	max_value.store(temp);
+//	max_value.store(temp, memory_order);
+	std::thread thread_client {client, std::ref(clients), std::cref(max_value)};
 	std::thread thread_manager {manager, std::ref(clients)};
 	thread_client.join();
 	thread_manager.join();
